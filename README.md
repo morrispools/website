@@ -4,7 +4,14 @@ A simple web app for texting clients after a job is done, asking them to leave
 a Google review. Type in a name and cell number (or paste a whole day's list),
 hit send, and the client gets a friendly text with your Google review link.
 
-Every text is logged, and the app warns you before texting the same number twice.
+It can also fire **automatically**: when a job is closed out in **Poolbrain**
+or a daily log goes out in **JobTread**, the client shows up in a "Waiting to
+send" list for one-click approval — or gets texted with no clicks at all if
+you turn on auto-send.
+
+Every text is logged, the app warns you before texting the same number twice,
+and a cooldown (90 days by default) keeps weekly-service clients from being
+asked repeatedly.
 
 ## Quick start (try it in test mode)
 
@@ -53,6 +60,67 @@ That link takes clients straight to the "leave a review" box for Morris Pools.
 If you host the app anywhere other than an office computer, set `APP_PASSWORD`
 in `.env` so only your team can send texts.
 
+## Hooking up Poolbrain and JobTread
+
+Both integrations work by "webhooks" — Poolbrain/JobTread call your app the
+moment something happens. That means **the app must be hosted somewhere with a
+public web address first** (see "Hosting it" below — Render or Railway takes
+about 15 minutes). A laptop at the office won't work for this part, because
+Poolbrain and JobTread can't reach it.
+
+Once hosted, say your app lives at `https://reviews.morrispools.com`:
+
+### Poolbrain — text when a job is closed out
+
+1. In Poolbrain, go to **Settings → API → Webhooks** and add a webhook
+   pointing to `https://reviews.morrispools.com/webhooks/poolbrain`.
+2. Subscribe it to the one-time job events (the ones that fire when a job's
+   status changes).
+3. Poolbrain shows you a **Signing Secret** — paste it into `.env` as
+   `POOLBRAIN_SIGNING_SECRET` and restart the app. (The secret is how the app
+   knows a request really came from Poolbrain.)
+
+By default the app only reacts to **one-time jobs** (repairs, installs,
+green-to-clean) that reach a completed/closed status — not routine weekly
+service stops. To change which events count, edit `POOLBRAIN_EVENTS` in
+`.env`.
+
+### JobTread — text when a daily log goes out
+
+1. Make up a long random password (30+ characters of anything) and put it in
+   `.env` as `JOBTREAD_WEBHOOK_KEY`.
+2. In JobTread, go to **Settings → Webhooks** and add a webhook for **Daily
+   Log created** events pointing to
+   `https://reviews.morrispools.com/webhooks/jobtread?key=YOUR-PASSWORD-HERE`
+   (same password as step 1 — it's how the app knows the call is really from
+   JobTread).
+3. Recommended: in JobTread go to **Settings → API**, create a grant key, and
+   put it in `.env` as `JOBTREAD_GRANT_KEY`. Daily-log webhooks don't always
+   include the client's phone number; with the grant key the app looks it up
+   automatically. Without it (or if the lookup comes up empty), the client
+   still appears in the Waiting list — you just fill in the number once and
+   hit Send.
+
+If a daily log is marked internal-only (not shared with the customer), the
+app skips it.
+
+### Approve-first vs. auto-send
+
+Out of the box the app is in **approve-first** mode: webhook events land in a
+"Waiting to send" list at the top of the page, showing the client's name and
+number pulled from Poolbrain/JobTread. You glance at it and click Send (or
+Dismiss). Once you've watched it get things right for a week or two, tick
+**Auto-send** in Settings and texts go out with no clicks at all — auto-send
+only fires when the app got both a name and a valid number, and never inside
+the cooldown window.
+
+One honest caveat: Poolbrain and JobTread don't publish the exact shape of
+their webhook data, so the app reads names and phone numbers out of whatever
+arrives (and refuses anything that looks like a technician's info rather than
+a customer's). If a webhook comes through with a blank name or number, it
+still lands safely in the Waiting list — and the server log will show what
+arrived so the matching can be tightened up.
+
 ## Day-to-day use
 
 - **One client:** type their name and cell number, click **Send review request**.
@@ -60,8 +128,12 @@ in `.env` so only your team can send texts.
   client per line: `Sarah Johnson, 555-123-4567`.
 - **Change the wording:** open Settings. `{name}` becomes the client's first
   name and `{link}` becomes your review link.
-- **History:** the table at the bottom shows everything sent. If a number was
+- **History:** the table at the bottom shows everything sent — including
+  whether it was manual, from Poolbrain, or from JobTread. If a number was
   already texted, the app asks before sending again.
+- **Waiting to send:** clients arriving from Poolbrain/JobTread sit here until
+  you approve them (unless auto-send is on). The list refreshes on its own
+  while the page is open.
 
 ## Playing by the rules (keeps you out of trouble)
 
@@ -77,11 +149,13 @@ in `.env` so only your team can send texts.
   happy customers ("review gating"). Asking everyone with a plain link, like
   this app does, is fine.
 
-## Hosting it (optional)
+## Hosting it
 
-The app runs fine on an office computer, but if you want it available anywhere
-(like on your phone from a job site), host it on a service like
-[Render](https://render.com) or [Railway](https://railway.app):
+The app runs fine on an office computer for manual sending, but the
+Poolbrain/JobTread automation **requires** hosting it somewhere with a public
+address (and it also means you can use it from your phone at a job site).
+Use a service like [Render](https://render.com) or
+[Railway](https://railway.app):
 
 - Build command: `npm install` — Start command: `npm start`
 - Add the same variables from your `.env` file as environment variables,

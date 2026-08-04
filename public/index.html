@@ -106,7 +106,26 @@
     .tag.test { background: #fdf3d0; color: var(--amber); }
     details summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
     .table-wrap { overflow-x: auto; }
-    @media (max-width: 560px) { th:nth-child(4), td:nth-child(4) { display: none; } }
+    .queue-item {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .queue-item:last-child { border-bottom: none; }
+    .queue-item .field { flex: 1; min-width: 150px; }
+    .queue-item .meta { width: 100%; font-size: 0.78rem; color: var(--muted); }
+    .queue-item button { margin-top: 0; padding: 9px 14px; }
+    .source-tag { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: #e7eef3; color: var(--muted); font-weight: 600; }
+    .checkline { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 0.92rem; }
+    .checkline input { width: auto; }
+    .webhook-status { font-size: 0.85rem; color: var(--muted); margin-top: 12px; line-height: 1.6; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+    .dot.on { background: var(--green); }
+    .dot.off { background: #b6c6d0; }
+    @media (max-width: 560px) { th:nth-child(5), td:nth-child(5) { display: none; } }
   </style>
 </head>
 <body>
@@ -133,6 +152,17 @@
       <button id="sendBtn">Send review request</button>
       <div class="status" id="sendStatus"></div>
       <div id="preview"></div>
+    </section>
+
+    <!-- Waiting queue (fed by Poolbrain / JobTread webhooks) -->
+    <section class="card" id="queueCard" style="display:none">
+      <h2>Waiting to send</h2>
+      <p class="hint">
+        Jobs closed in Poolbrain and daily logs from JobTread land here.
+        Check the name and number, then send — or turn on auto-send in Settings.
+      </p>
+      <div id="queueList"></div>
+      <div class="status" id="queueStatus"></div>
     </section>
 
     <!-- Bulk send -->
@@ -165,8 +195,28 @@
             <code>{name}</code> becomes the client's first name, <code>{link}</code> becomes your review link.
             Keep "Reply STOP to opt out" in the message.
           </p>
+          <div class="checkline">
+            <input type="checkbox" id="autoSend" />
+            <label for="autoSend" style="margin:0">
+              Auto-send — text clients automatically when Poolbrain/JobTread reports a finished job
+            </label>
+          </div>
+          <p class="hint" style="margin-top:4px">
+            When off, everything waits in the "Waiting to send" list for you to approve.
+            Auto-send only fires when both a name and valid number came through.
+          </p>
+          <div class="row" style="margin-top:10px">
+            <div style="max-width:220px">
+              <label for="cooldownDays">Don't repeat-text within (days)</label>
+              <input type="text" id="cooldownDays" inputmode="numeric" />
+            </div>
+          </div>
+          <p class="hint" style="margin-top:6px">
+            Keeps weekly-service clients from getting a review text every visit.
+          </p>
           <button id="saveSettingsBtn">Save settings</button>
           <div class="status" id="settingsStatus"></div>
+          <div class="webhook-status" id="webhookStatus"></div>
         </div>
       </details>
     </section>
@@ -178,10 +228,10 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Client</th><th>Number</th><th>Status</th><th>When</th></tr>
+            <tr><th>Client</th><th>Number</th><th>Status</th><th>Source</th><th>When</th></tr>
           </thead>
           <tbody id="historyBody">
-            <tr><td colspan="4" style="color:var(--muted)">Nothing sent yet.</td></tr>
+            <tr><td colspan="5" style="color:var(--muted)">Nothing sent yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -229,15 +279,32 @@
       config = await api("/api/config");
       $("template").value = config.template;
       $("reviewLink").value = config.reviewLink;
+      $("autoSend").checked = config.autoSend;
+      $("cooldownDays").value = config.cooldownDays;
       if (!config.reviewLink) $("settingsDetails").open = true;
       renderMode();
+      renderWebhookStatus();
       updatePreview();
+    }
+
+    function renderWebhookStatus() {
+      const wh = config.webhooks || {};
+      const line = (label, info) => {
+        const on = info && info.configured;
+        const url = location.origin + (info ? info.path : "");
+        return `<span class="dot ${on ? "on" : "off"}"></span><strong>${label}:</strong> ` +
+          (on ? `connected — webhook URL: <code>${escapeHtml(url)}</code>`
+              : "not set up yet (see the README for the two-minute setup)");
+      };
+      $("webhookStatus").innerHTML =
+        line("Poolbrain", wh.poolbrain) + "<br />" + line("JobTread", wh.jobtread);
     }
 
     async function loadHistory() {
       const history = await api("/api/history");
       const body = $("historyBody");
       if (!history.length) return;
+      const sourceLabel = { manual: "manual", poolbrain: "Poolbrain", jobtread: "JobTread" };
       body.innerHTML = history
         .map((h) => {
           const when = new Date(h.date).toLocaleString([], {
@@ -248,9 +315,73 @@
             : h.status === "sent"
               ? '<span class="tag sent">sent</span>'
               : '<span class="tag failed">failed</span>';
-          return `<tr><td>${escapeHtml(h.name)}</td><td>${escapeHtml(h.phone)}</td><td>${tag}</td><td>${when}</td></tr>`;
+          const source = sourceLabel[h.source] || "manual";
+          return `<tr><td>${escapeHtml(h.name)}</td><td>${escapeHtml(h.phone)}</td><td>${tag}</td><td>${escapeHtml(source)}</td><td>${when}</td></tr>`;
         })
         .join("");
+    }
+
+    async function loadQueue() {
+      const queue = await api("/api/queue");
+      const card = $("queueCard");
+      card.style.display = queue.length ? "" : "none";
+      if (!queue.length) return;
+      const sourceLabel = { poolbrain: "Poolbrain", jobtread: "JobTread" };
+      $("queueList").innerHTML = queue
+        .map((q) => {
+          const when = new Date(q.receivedAt).toLocaleString([], {
+            month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+          });
+          return `
+          <div class="queue-item" data-id="${q.id}">
+            <div class="meta">
+              <span class="source-tag">${sourceLabel[q.source] || q.source}</span>
+              &nbsp;${escapeHtml(q.event)} &middot; ${when}
+              ${q.name && q.phone ? "" : " &middot; <strong>fill in the missing info below</strong>"}
+            </div>
+            <div class="field">
+              <label>Client name</label>
+              <input type="text" class="q-name" value="${escapeHtml(q.name)}" placeholder="Client name" />
+            </div>
+            <div class="field">
+              <label>Cell number</label>
+              <input type="tel" class="q-phone" value="${escapeHtml(q.phone)}" placeholder="555-123-4567" />
+            </div>
+            <button class="q-send">Send</button>
+            <button class="q-dismiss secondary">Dismiss</button>
+          </div>`;
+        })
+        .join("");
+
+      for (const row of $("queueList").querySelectorAll(".queue-item")) {
+        const id = row.dataset.id;
+        row.querySelector(".q-send").addEventListener("click", async (e) => {
+          e.target.disabled = true;
+          try {
+            await api(`/api/queue/${id}/send`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: row.querySelector(".q-name").value,
+                phone: row.querySelector(".q-phone").value,
+              }),
+            });
+            setStatus($("queueStatus"), "Sent.", "ok");
+            await Promise.all([loadQueue(), loadHistory()]);
+          } catch (err) {
+            setStatus($("queueStatus"), err.message, "err");
+            e.target.disabled = false;
+          }
+        });
+        row.querySelector(".q-dismiss").addEventListener("click", async () => {
+          try {
+            await api(`/api/queue/${id}/dismiss`, { method: "POST" });
+            await loadQueue();
+          } catch (err) {
+            setStatus($("queueStatus"), err.message, "err");
+          }
+        });
+      }
     }
 
     function escapeHtml(s) {
@@ -354,6 +485,8 @@
           body: JSON.stringify({
             template: $("template").value,
             reviewLink: $("reviewLink").value,
+            autoSend: $("autoSend").checked,
+            cooldownDays: Number($("cooldownDays").value),
           }),
         });
         await loadConfig();
@@ -365,9 +498,17 @@
 
     $("name").addEventListener("input", updatePreview);
 
-    loadConfig().then(loadHistory).catch(() => {
-      setStatus($("sendStatus"), "Couldn't reach the server. Is it running?", "err");
-    });
+    loadConfig()
+      .then(() => Promise.all([loadHistory(), loadQueue()]))
+      .catch(() => {
+        setStatus($("sendStatus"), "Couldn't reach the server. Is it running?", "err");
+      });
+
+    // Webhook events arrive while the page is open — keep the queue fresh.
+    setInterval(() => {
+      loadQueue().catch(() => {});
+      loadHistory().catch(() => {});
+    }, 20000);
   </script>
 </body>
 </html>
