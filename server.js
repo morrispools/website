@@ -9,7 +9,9 @@ const app = express();
 app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
 
-const DATA_DIR = path.join(__dirname, "data");
+// On Render this points at the persistent disk (/var/data) so history,
+// settings, queue, and leads survive deploys and restarts.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 const QUEUE_FILE = path.join(DATA_DIR, "queue.json");
@@ -539,6 +541,10 @@ function notifyLead(lead) {
     console.log(`[assistant] Lead SMS notification failed: ${err.message}`)
   );
 }
+
+app.get("/healthz", (req, res) => {
+  res.json({ ok: true });
+});
 
 app.get("/widget.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "widget.js"));

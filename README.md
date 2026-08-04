@@ -230,20 +230,57 @@ shown in this app and optionally **texted straight to your phone**.
   happy customers ("review gating"). Asking everyone with a plain link, like
   this app does, is fine.
 
-## Hosting it
+## Going live on Render (step by step)
 
-The app runs fine on an office computer for manual sending, but the
-Poolbrain/JobTread automation **requires** hosting it somewhere with a public
-address (and it also means you can use it from your phone at a job site).
-Use a service like [Render](https://render.com) or
-[Railway](https://railway.app):
+The repo includes a `render.yaml` Blueprint, so Render configures itself.
+Cost: the Starter plan is $7/month plus about $0.25/month for the 1 GB data
+disk. (The free plan won't work — it has no persistent disk, so your history
+and leads would be erased on every restart.)
 
-- Build command: `npm install` — Start command: `npm start`
-- Add the same variables from your `.env` file as environment variables,
-  **including `APP_PASSWORD`**.
-- Note: sent-message history is stored in a `data/` folder on disk. On hosting
-  services, attach a persistent disk (Render calls it a "Disk") so history
-  survives restarts.
+### Deploy
+
+1. Create an account at [render.com](https://render.com) (sign up with
+   GitHub — it makes the next step automatic).
+2. Click **New +** → **Blueprint**, and connect/select this GitHub
+   repository. If Render asks which branch, pick the branch this code
+   lives on.
+3. Render reads `render.yaml` and shows a form with the environment
+   variables. Fill in what you have now — at minimum set **APP_PASSWORD**
+   (make up a strong password; this protects the admin page, which is now on
+   the public internet). Everything else can be left blank and added later
+   under the service's **Environment** tab:
+   - `TWILIO_*` — from your Twilio console (review texts + lead texts)
+   - `ANTHROPIC_API_KEY` — from console.anthropic.com (chat assistant)
+   - `POOLBRAIN_SIGNING_SECRET` / `JOBTREAD_WEBHOOK_KEY` — webhook automation
+   - `LEAD_NOTIFY_PHONE` — your cell, like `+15551234567`
+4. Click **Apply**. First deploy takes a couple of minutes. Your app comes
+   up at a URL like `https://morris-pools-hub.onrender.com` — opening it
+   should ask for your password and then show the admin page.
+
+Changing an environment variable later (Environment tab → edit → Save)
+automatically restarts the app with the new value. Pushing new code to the
+connected branch automatically redeploys.
+
+### After it's live — point everything at the new URL
+
+Using your real Render URL in place of `https://YOUR-APP.onrender.com`:
+
+- **WordPress chat widget:** paste
+  `<script src="https://YOUR-APP.onrender.com/widget.js" async></script>`
+  into WPCode as a Footer snippet.
+- **Poolbrain:** Settings → API → Webhooks →
+  `https://YOUR-APP.onrender.com/webhooks/poolbrain`
+- **JobTread:** Settings → Webhooks →
+  `https://YOUR-APP.onrender.com/webhooks/jobtread?key=YOUR-JOBTREAD-KEY`
+- **Settings panel:** open the admin page, add your Google review link, and
+  paste your business info into the Website assistant panel.
+
+### Optional: your own address
+
+To use `reviews.morrispools.com` instead of the `.onrender.com` address: in
+Render open the service → **Settings → Custom Domains** → add the subdomain,
+then add the CNAME record it shows you wherever your domain's DNS is managed
+(likely the same place morrispools.com is registered). HTTPS is automatic.
 
 ## Files in this project
 

@@ -1,0 +1,55 @@
+# Render Blueprint — deploys the Morris Pools hub (review texts, Poolbrain/
+# JobTread webhooks, and the website chat assistant) as one web service.
+#
+# In Render: New + -> Blueprint -> pick this repo. Render reads this file,
+# creates the service with a persistent disk, and prompts you for the
+# secret values below (any you don't have yet can be left blank and filled
+# in later under the service's Environment tab).
+services:
+  - type: web
+    name: morris-pools-hub
+    runtime: node
+    plan: starter # persistent disks aren't available on the free plan
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: morris-pools-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: ASSISTANT_DAILY_LIMIT
+        value: "300"
+      # Password for the admin page — required now that it's on the internet.
+      - key: APP_PASSWORD
+        sync: false
+      # Twilio (review texts + lead notifications)
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      # Google review link (can also be set in the app's Settings panel)
+      - key: GOOGLE_REVIEW_LINK
+        sync: false
+      # Poolbrain webhook signing secret (Settings -> API -> Webhooks)
+      - key: POOLBRAIN_SIGNING_SECRET
+        sync: false
+      # JobTread webhook shared secret + optional API grant key
+      - key: JOBTREAD_WEBHOOK_KEY
+        sync: false
+      - key: JOBTREAD_GRANT_KEY
+        sync: false
+      # NiceJob hand-off hook (Zapier Catch Hook URL), if using NiceJob mode
+      - key: NICEJOB_FORWARD_URL
+        sync: false
+      # Website chat assistant
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Your cell number for instant lead texts, e.g. +15551234567
+      - key: LEAD_NOTIFY_PHONE
+        sync: false
