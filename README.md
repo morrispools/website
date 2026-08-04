@@ -157,6 +157,51 @@ campaign. In NiceJob mode you don't need Twilio, the review link, or the
 message template — NiceJob handles all of that. The approval queue and
 cooldown still apply, so nobody gets enrolled twice in a season.
 
+## Website AI assistant (chat widget)
+
+The app can also power an AI chat bubble on morrispools.com. Visitors ask
+questions ("Do you service my area?", "How much does a heater repair cost?"),
+the assistant answers from business information you control, and when someone
+wants a quote or a callback it collects their name and number as a **lead** —
+shown in this app and optionally **texted straight to your phone**.
+
+### Setup (about 10 minutes)
+
+1. **Get a Claude API key.** Sign up at
+   [console.anthropic.com](https://console.anthropic.com), add a payment
+   method, and create an API key (Settings → API keys). Put it in `.env` as
+   `ANTHROPIC_API_KEY`. Typical cost is around half a cent per chat message,
+   and the app caps usage at `ASSISTANT_DAILY_LIMIT` messages per day
+   (default 300, so roughly a couple dollars a day at absolute most).
+2. **Teach it your business.** In the app, open **Website assistant** and edit
+   "What the assistant knows" — services, service area, hours, who handles
+   what. The assistant only answers from this text; anything not in it, it
+   offers to have your team follow up instead of guessing. Keep it current the
+   same way you'd brief a new office hire.
+3. **Add it to WordPress.** Copy the one-line snippet from the Website
+   assistant panel — it looks like
+   `<script src="https://YOUR-APP-URL/widget.js" async></script>` — and paste
+   it into WordPress. Easiest way: install the free **WPCode** plugin, add a
+   new "Footer" snippet, paste, save. (Any method that adds a line to your
+   site's footer works; no other plugin needed.) The app must be hosted
+   online first — same requirement as the Poolbrain webhook.
+4. **Lead texts (optional).** Put your cell number in `.env` as
+   `LEAD_NOTIFY_PHONE`. With Twilio configured, you get a text the moment a
+   visitor leaves their info: *"Website lead: Sarah Johnson (555-123-4567) —
+   wants a quote for a new pool."*
+
+### What it will and won't do
+
+- It answers **only** from the knowledge text you wrote — no made-up prices,
+  no guessed availability. Asked for a price, it explains that quotes depend
+  on the project and offers to connect them with the team.
+- Off-topic questions get a polite "I can only help with Morris Pools
+  questions."
+- It's rate-limited per visitor and capped per day, so a prankster can't run
+  up your bill.
+- Every lead appears in the **Website assistant** panel with a Done button,
+  and in your text messages if notifications are on.
+
 ## Day-to-day use
 
 - **One client:** type their name and cell number, click **Send review request**.

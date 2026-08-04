@@ -237,6 +237,45 @@
       </details>
     </section>
 
+    <!-- Website assistant -->
+    <section class="card">
+      <details id="assistantDetails">
+        <summary>Website assistant — AI chat on morrispools.com</summary>
+        <div style="margin-top:14px">
+          <p class="hint" id="assistantStatus"></p>
+          <label>Add it to your WordPress site</label>
+          <p class="hint" style="margin-top:4px">
+            Paste this one line into your site (WPCode plugin &rarr; new Footer snippet, or
+            your theme's footer). A chat bubble appears in the bottom-right corner.
+          </p>
+          <input type="text" id="embedSnippet" readonly onclick="this.select()" style="font-family:monospace;font-size:0.82rem" />
+          <label for="assistantKnowledge" style="margin-top:14px">What the assistant knows</label>
+          <p class="hint" style="margin-top:4px">
+            The assistant only answers from what's written here — services, service area,
+            hours, who handles what, common questions. Edit the placeholders, keep it current.
+          </p>
+          <textarea id="assistantKnowledge" rows="14" style="font-family:monospace;font-size:0.85rem"></textarea>
+          <button id="saveKnowledgeBtn">Save knowledge</button>
+          <a href="/widget" target="_blank"><button type="button" class="secondary">Try the chat</button></a>
+          <div class="status" id="assistantSaveStatus"></div>
+
+          <h2 style="margin-top:20px">Leads from the chat</h2>
+          <p class="hint">When a visitor asks for a quote or a callback, they show up here
+            (and you get a text if lead notifications are set up).</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Name</th><th>Contact</th><th>What they need</th><th>When</th><th></th></tr>
+              </thead>
+              <tbody id="leadsBody">
+                <tr><td colspan="5" style="color:var(--muted)">No leads yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </section>
+
     <!-- History -->
     <section class="card">
       <h2>Recently sent</h2>
@@ -323,7 +362,53 @@
       renderMode();
       renderDeliveryFields();
       renderWebhookStatus();
+      renderAssistant();
       updatePreview();
+    }
+
+    function renderAssistant() {
+      const a = config.assistant || {};
+      $("assistantStatus").innerHTML = a.configured
+        ? '<span class="dot on"></span>Connected to Claude — the assistant is live.'
+        : '<span class="dot off"></span>Not connected yet — add an ANTHROPIC_API_KEY (see the README\'s assistant section). Until then the chat tells visitors to email instead.';
+      $("embedSnippet").value =
+        '<script src="' + location.origin + '/widget.js" async><\/script>';
+      if (document.activeElement !== $("assistantKnowledge")) {
+        $("assistantKnowledge").value = a.knowledge || "";
+      }
+    }
+
+    async function loadLeads() {
+      const leads = await api("/api/leads");
+      const body = $("leadsBody");
+      if (!leads.length) {
+        body.innerHTML =
+          '<tr><td colspan="5" style="color:var(--muted)">No leads yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = leads
+        .map((l) => {
+          const when = new Date(l.date).toLocaleString([], {
+            month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+          });
+          const contact = [l.phone, l.email].filter(Boolean).join("<br />");
+          return `<tr>
+            <td>${escapeHtml(l.name)}</td>
+            <td>${contact ? escapeHtml(l.phone || "") + (l.phone && l.email ? "<br />" : "") + escapeHtml(l.email || "") : "—"}</td>
+            <td>${escapeHtml(l.message)}</td>
+            <td>${when}</td>
+            <td><button class="secondary lead-dismiss" data-id="${l.id}" style="margin:0;padding:6px 10px;font-size:0.8rem">Done</button></td>
+          </tr>`;
+        })
+        .join("");
+      for (const btn of body.querySelectorAll(".lead-dismiss")) {
+        btn.addEventListener("click", async () => {
+          try {
+            await api(`/api/leads/${btn.dataset.id}/dismiss`, { method: "POST" });
+            await loadLeads();
+          } catch {}
+        });
+      }
     }
 
     function renderWebhookStatus() {
@@ -540,16 +625,31 @@
 
     $("name").addEventListener("input", updatePreview);
 
+    $("saveKnowledgeBtn").addEventListener("click", async () => {
+      const status = $("assistantSaveStatus");
+      try {
+        await api("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assistantKnowledge: $("assistantKnowledge").value }),
+        });
+        setStatus(status, "Saved — the assistant uses the new info immediately.", "ok");
+      } catch (err) {
+        setStatus(status, err.message, "err");
+      }
+    });
+
     loadConfig()
-      .then(() => Promise.all([loadHistory(), loadQueue()]))
+      .then(() => Promise.all([loadHistory(), loadQueue(), loadLeads()]))
       .catch(() => {
         setStatus($("sendStatus"), "Couldn't reach the server. Is it running?", "err");
       });
 
-    // Webhook events arrive while the page is open — keep the queue fresh.
+    // Webhook events and chat leads arrive while the page is open — keep them fresh.
     setInterval(() => {
       loadQueue().catch(() => {});
       loadHistory().catch(() => {});
+      loadLeads().catch(() => {});
     }, 20000);
   </script>
 </body>

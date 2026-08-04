@@ -3,14 +3,17 @@ const express = require("express");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const assistant = require("./assistant");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
 
 const DATA_DIR = path.join(__dirname, "data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 const QUEUE_FILE = path.join(DATA_DIR, "queue.json");
+const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 
 const DEFAULT_TEMPLATE =
   "Hi {name}, thanks for choosing Morris Pools! We'd love to hear how we did. " +
@@ -513,6 +516,69 @@ async function jobtreadLookup(payload) {
   }
 }
 
+// ---------- website chat assistant (public: embedded on morrispools.com) ----------
+
+function getLeads() {
+  return readJson(LEADS_FILE, []);
+}
+
+function saveLead(lead) {
+  const leads = getLeads();
+  leads.push(lead);
+  writeJson(LEADS_FILE, leads);
+  console.log(`[assistant] New lead: ${lead.name} (${lead.phone || lead.email}) — ${lead.message}`);
+}
+
+// Texts Daniel when a lead comes in, if Twilio + LEAD_NOTIFY_PHONE are set.
+function notifyLead(lead) {
+  const to = normalizePhone(process.env.LEAD_NOTIFY_PHONE);
+  if (!to || !twilioConfigured()) return;
+  const reach = [lead.phone, lead.email].filter(Boolean).join(" / ");
+  const body = `Website lead: ${lead.name} (${reach}) — ${lead.message}`.slice(0, 320);
+  sendSms(to, body).catch((err) =>
+    console.log(`[assistant] Lead SMS notification failed: ${err.message}`)
+  );
+}
+
+app.get("/widget.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "widget.js"));
+});
+
+app.get("/widget", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "widget.html"));
+});
+
+app.post("/api/chat", express.json({ limit: "64kb" }), async (req, res) => {
+  if (!assistant.configured()) {
+    return res.status(503).json({
+      reply:
+        "The chat assistant isn't available right now. Please email daniel@morrispools.com and we'll get right back to you.",
+    });
+  }
+  if (assistant.rateLimited(req.ip) || assistant.overDailyLimit()) {
+    return res.status(429).json({
+      reply:
+        "You're sending messages a little fast — give it a minute, or email daniel@morrispools.com.",
+    });
+  }
+  try {
+    const result = await assistant.chat(req.body && req.body.messages, {
+      getKnowledge: () =>
+        readJson(SETTINGS_FILE, {}).assistantKnowledge || assistant.DEFAULT_KNOWLEDGE,
+      saveLead,
+      notifyLead,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    console.log(`[assistant] Chat error: ${err.message}`);
+    res.status(502).json({
+      reply:
+        "Sorry, I'm having trouble right now. Please email daniel@morrispools.com and we'll help you out.",
+    });
+  }
+});
+
 // ---------- password auth for the UI / API ----------
 
 app.use((req, res, next) => {
@@ -547,6 +613,11 @@ app.get("/api/config", (req, res) => {
     reviewLink: settings.reviewLink,
     autoSend: settings.autoSend,
     cooldownDays: settings.cooldownDays,
+    assistant: {
+      configured: assistant.configured(),
+      knowledge:
+        readJson(SETTINGS_FILE, {}).assistantKnowledge || assistant.DEFAULT_KNOWLEDGE,
+    },
     webhooks: {
       poolbrain: {
         configured: Boolean(process.env.POOLBRAIN_SIGNING_SECRET),
@@ -561,9 +632,12 @@ app.get("/api/config", (req, res) => {
 });
 
 app.post("/api/settings", (req, res) => {
-  const { template, reviewLink, autoSend, cooldownDays, delivery } =
+  const { template, reviewLink, autoSend, cooldownDays, delivery, assistantKnowledge } =
     req.body || {};
   const current = readJson(SETTINGS_FILE, {});
+  if (typeof assistantKnowledge === "string" && assistantKnowledge.trim()) {
+    current.assistantKnowledge = assistantKnowledge.trim().slice(0, 20000);
+  }
   if (delivery === "sms" || delivery === "nicejob") current.delivery = delivery;
   if (typeof template === "string" && template.trim()) {
     current.template = template.trim();
@@ -580,6 +654,20 @@ app.post("/api/settings", (req, res) => {
 
 app.get("/api/history", (req, res) => {
   res.json(getHistory().slice().reverse());
+});
+
+app.get("/api/leads", (req, res) => {
+  res.json(getLeads().slice().reverse());
+});
+
+app.post("/api/leads/:id/dismiss", (req, res) => {
+  const leads = getLeads();
+  const next = leads.filter((l) => l.id !== req.params.id);
+  if (next.length === leads.length) {
+    return res.status(404).json({ error: "Lead not found." });
+  }
+  writeJson(LEADS_FILE, next);
+  res.json({ ok: true });
 });
 
 app.get("/api/queue", (req, res) => {
@@ -677,5 +765,8 @@ app.listen(PORT, () => {
   console.log(
     `Webhooks: Poolbrain ${process.env.POOLBRAIN_SIGNING_SECRET ? "ready" : "off (set POOLBRAIN_SIGNING_SECRET)"}, ` +
       `JobTread ${process.env.JOBTREAD_WEBHOOK_KEY ? "ready" : "off (set JOBTREAD_WEBHOOK_KEY)"}`
+  );
+  console.log(
+    `Website assistant: ${assistant.configured() ? "ready" : "off (set ANTHROPIC_API_KEY)"}`
   );
 });
