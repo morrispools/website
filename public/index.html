@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morris Pools — Review Texts</title>
+  <style>
+    :root {
+      --blue: #0b6ea8;
+      --blue-dark: #084f79;
+      --bg: #f2f7fa;
+      --card: #ffffff;
+      --text: #1c2b33;
+      --muted: #5b7280;
+      --border: #d7e3ea;
+      --green: #1a7f4b;
+      --red: #b3362b;
+      --amber: #8a6d1a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: var(--blue);
+      color: #fff;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+    #modeBadge {
+      font-size: 0.8rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.2);
+    }
+    #modeBadge.test { background: #f0c33c; color: #4a3a00; font-weight: 600; }
+    main {
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px 48px;
+      display: grid;
+      gap: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+    .card p.hint { margin: 0 0 14px; color: var(--muted); font-size: 0.87rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
+    input[type="text"], input[type="tel"], input[type="url"], textarea {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 180px; }
+    button {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 10px 18px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    button:hover { background: var(--blue-dark); }
+    button:disabled { background: #9db6c4; cursor: default; }
+    button.secondary { background: #e7eef3; color: var(--text); }
+    button.secondary:hover { background: #d7e3ea; }
+    .status { margin-top: 10px; font-size: 0.9rem; }
+    .status.ok { color: var(--green); }
+    .status.err { color: var(--red); }
+    .status.warn { color: var(--amber); }
+    #preview {
+      background: #eef5f9;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.9rem;
+      margin-top: 14px;
+      white-space: pre-wrap;
+      color: var(--muted);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tag { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .tag.sent { background: #dcf2e5; color: var(--green); }
+    .tag.failed { background: #f9e0dd; color: var(--red); }
+    .tag.test { background: #fdf3d0; color: var(--amber); }
+    details summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+    .table-wrap { overflow-x: auto; }
+    @media (max-width: 560px) { th:nth-child(4), td:nth-child(4) { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Morris Pools — Review Texts</h1>
+    <span id="modeBadge"></span>
+  </header>
+
+  <main>
+    <!-- Single send -->
+    <section class="card">
+      <h2>Text a client</h2>
+      <p class="hint">Enter the client's name and cell number. They'll get a text with your Google review link.</p>
+      <div class="row">
+        <div>
+          <label for="name">Client name</label>
+          <input type="text" id="name" placeholder="e.g. Sarah Johnson" autocomplete="off" />
+        </div>
+        <div>
+          <label for="phone">Cell number</label>
+          <input type="tel" id="phone" placeholder="e.g. 555-123-4567" autocomplete="off" />
+        </div>
+      </div>
+      <button id="sendBtn">Send review request</button>
+      <div class="status" id="sendStatus"></div>
+      <div id="preview"></div>
+    </section>
+
+    <!-- Bulk send -->
+    <section class="card">
+      <details>
+        <summary>Send to a whole list at once</summary>
+        <p class="hint" style="margin-top:10px">
+          One client per line, name then number, separated by a comma. Example:<br />
+          <code>Sarah Johnson, 555-123-4567</code>
+        </p>
+        <textarea id="bulkInput" rows="6" placeholder="Sarah Johnson, 555-123-4567&#10;Mike Reed, (555) 987-6543"></textarea>
+        <button id="bulkBtn">Send to all</button>
+        <div class="status" id="bulkStatus"></div>
+      </details>
+    </section>
+
+    <!-- Settings -->
+    <section class="card">
+      <details id="settingsDetails">
+        <summary>Settings — message wording &amp; review link</summary>
+        <div style="margin-top:14px">
+          <label for="reviewLink">Google review link</label>
+          <input type="url" id="reviewLink" placeholder="https://g.page/r/XXXXXXXX/review" />
+          <p class="hint" style="margin-top:6px">
+            Find this in your Google Business Profile: google.com/business &rarr; "Ask for reviews".
+          </p>
+          <label for="template" style="margin-top:10px">Message template</label>
+          <textarea id="template" rows="4"></textarea>
+          <p class="hint" style="margin-top:6px">
+            <code>{name}</code> becomes the client's first name, <code>{link}</code> becomes your review link.
+            Keep "Reply STOP to opt out" in the message.
+          </p>
+          <button id="saveSettingsBtn">Save settings</button>
+          <div class="status" id="settingsStatus"></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- History -->
+    <section class="card">
+      <h2>Recently sent</h2>
+      <p class="hint">Every text is logged here so you don't text the same client twice.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Client</th><th>Number</th><th>Status</th><th>When</th></tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="4" style="color:var(--muted)">Nothing sent yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let config = { testMode: true, template: "", reviewLink: "" };
+
+    const $ = (id) => document.getElementById(id);
+
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      return data;
+    }
+
+    function setStatus(el, message, kind) {
+      el.textContent = message;
+      el.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function updatePreview() {
+      const name = ($("name").value.trim().split(/\s+/)[0]) || "Sarah";
+      const link = config.reviewLink || "https://g.page/r/…/review";
+      const text = (config.template || "")
+        .replaceAll("{name}", name)
+        .replaceAll("{link}", link);
+      $("preview").textContent = text ? "Preview: " + text : "";
+    }
+
+    function renderMode() {
+      const badge = $("modeBadge");
+      if (config.testMode) {
+        badge.textContent = "TEST MODE — texts are logged, not sent";
+        badge.className = "test";
+      } else {
+        badge.textContent = "Live";
+        badge.className = "";
+      }
+    }
+
+    async function loadConfig() {
+      config = await api("/api/config");
+      $("template").value = config.template;
+      $("reviewLink").value = config.reviewLink;
+      if (!config.reviewLink) $("settingsDetails").open = true;
+      renderMode();
+      updatePreview();
+    }
+
+    async function loadHistory() {
+      const history = await api("/api/history");
+      const body = $("historyBody");
+      if (!history.length) return;
+      body.innerHTML = history
+        .map((h) => {
+          const when = new Date(h.date).toLocaleString([], {
+            month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+          });
+          const tag = h.testMode
+            ? '<span class="tag test">test</span>'
+            : h.status === "sent"
+              ? '<span class="tag sent">sent</span>'
+              : '<span class="tag failed">failed</span>';
+          return `<tr><td>${escapeHtml(h.name)}</td><td>${escapeHtml(h.phone)}</td><td>${tag}</td><td>${when}</td></tr>`;
+        })
+        .join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
+    }
+
+    async function sendOne(name, phone, statusEl) {
+      let result = await api("/api/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone }),
+      });
+      if (result.duplicate) {
+        const when = new Date(result.previousDate).toLocaleDateString();
+        const ok = confirm(
+          `${result.previousName} (${phone}) already got a review text on ${when}. Send again anyway?`
+        );
+        if (!ok) return { skipped: true };
+        result = await api("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, phone, force: true }),
+        });
+      }
+      return result;
+    }
+
+    $("sendBtn").addEventListener("click", async () => {
+      const name = $("name").value.trim();
+      const phone = $("phone").value.trim();
+      const status = $("sendStatus");
+      if (!name || !phone) {
+        return setStatus(status, "Please fill in both the name and the number.", "err");
+      }
+      $("sendBtn").disabled = true;
+      setStatus(status, "Sending…");
+      try {
+        const result = await sendOne(name, phone, status);
+        if (result.skipped) {
+          setStatus(status, "Skipped — already sent to that number.", "warn");
+        } else {
+          setStatus(
+            status,
+            result.testMode
+              ? "Logged in test mode (connect Twilio to send for real)."
+              : `Text sent to ${name}!`,
+            "ok"
+          );
+          $("name").value = "";
+          $("phone").value = "";
+        }
+      } catch (err) {
+        setStatus(status, err.message, "err");
+      } finally {
+        $("sendBtn").disabled = false;
+        loadHistory();
+      }
+    });
+
+    $("bulkBtn").addEventListener("click", async () => {
+      const lines = $("bulkInput").value
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const status = $("bulkStatus");
+      if (!lines.length) return setStatus(status, "Paste at least one line first.", "err");
+
+      $("bulkBtn").disabled = true;
+      let sent = 0, failed = 0, skipped = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const commaIndex = lines[i].lastIndexOf(",");
+        if (commaIndex === -1) { failed++; continue; }
+        const name = lines[i].slice(0, commaIndex).trim();
+        const phone = lines[i].slice(commaIndex + 1).trim();
+        setStatus(status, `Sending ${i + 1} of ${lines.length}…`);
+        try {
+          const result = await sendOne(name, phone, status);
+          if (result.skipped) skipped++;
+          else sent++;
+        } catch {
+          failed++;
+        }
+      }
+      const parts = [`${sent} sent`];
+      if (skipped) parts.push(`${skipped} skipped (already texted)`);
+      if (failed) parts.push(`${failed} failed`);
+      setStatus(status, "Done: " + parts.join(", ") + ".", failed ? "warn" : "ok");
+      if (sent) $("bulkInput").value = "";
+      $("bulkBtn").disabled = false;
+      loadHistory();
+    });
+
+    $("saveSettingsBtn").addEventListener("click", async () => {
+      const status = $("settingsStatus");
+      try {
+        await api("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            template: $("template").value,
+            reviewLink: $("reviewLink").value,
+          }),
+        });
+        await loadConfig();
+        setStatus(status, "Saved.", "ok");
+      } catch (err) {
+        setStatus(status, err.message, "err");
+      }
+    });
+
+    $("name").addEventListener("input", updatePreview);
+
+    loadConfig().then(loadHistory).catch(() => {
+      setStatus($("sendStatus"), "Couldn't reach the server. Is it running?", "err");
+    });
+  </script>
+</body>
+</html>
