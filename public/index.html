@@ -184,7 +184,22 @@
       <details id="settingsDetails">
         <summary>Settings — message wording &amp; review link</summary>
         <div style="margin-top:14px">
-          <label for="reviewLink">Google review link</label>
+          <label>How review requests go out</label>
+          <div class="checkline" style="margin-top:6px">
+            <input type="radio" name="delivery" id="deliverySms" value="sms" />
+            <label for="deliverySms" style="margin:0; font-weight:400">
+              <strong>Text directly from this app</strong> — one text with your review link, via Twilio
+            </label>
+          </div>
+          <div class="checkline" style="margin-top:6px">
+            <input type="radio" name="delivery" id="deliveryNicejob" value="nicejob" />
+            <label for="deliveryNicejob" style="margin:0; font-weight:400">
+              <strong>Hand off to NiceJob</strong> — NiceJob sends its own texts/emails with automatic reminders
+            </label>
+          </div>
+          <p class="hint" id="deliveryHint" style="margin-top:6px"></p>
+          <div id="smsOnlyFields">
+          <label for="reviewLink" style="margin-top:10px">Google review link</label>
           <input type="url" id="reviewLink" placeholder="https://g.page/r/XXXXXXXX/review" />
           <p class="hint" style="margin-top:6px">
             Find this in your Google Business Profile: google.com/business &rarr; "Ask for reviews".
@@ -195,6 +210,7 @@
             <code>{name}</code> becomes the client's first name, <code>{link}</code> becomes your review link.
             Keep "Reply STOP to opt out" in the message.
           </p>
+          </div>
           <div class="checkline">
             <input type="checkbox" id="autoSend" />
             <label for="autoSend" style="margin:0">
@@ -256,6 +272,11 @@
     }
 
     function updatePreview() {
+      if (config.delivery === "nicejob") {
+        $("preview").textContent =
+          "NiceJob writes and sends its own messages (with reminders) — manage the wording in your NiceJob campaign.";
+        return;
+      }
       const name = ($("name").value.trim().split(/\s+/)[0]) || "Sarah";
       const link = config.reviewLink || "https://g.page/r/…/review";
       const text = (config.template || "")
@@ -266,13 +287,28 @@
 
     function renderMode() {
       const badge = $("modeBadge");
+      const nicejob = config.delivery === "nicejob";
       if (config.testMode) {
-        badge.textContent = "TEST MODE — texts are logged, not sent";
+        badge.textContent = nicejob
+          ? "TEST MODE — NiceJob hook not set, logging only"
+          : "TEST MODE — texts are logged, not sent";
         badge.className = "test";
       } else {
-        badge.textContent = "Live";
+        badge.textContent = nicejob ? "Live — via NiceJob" : "Live";
         badge.className = "";
       }
+    }
+
+    function renderDeliveryFields() {
+      const nicejob = config.delivery === "nicejob";
+      $("deliverySms").checked = !nicejob;
+      $("deliveryNicejob").checked = nicejob;
+      $("smsOnlyFields").style.display = nicejob ? "none" : "";
+      $("deliveryHint").textContent = nicejob
+        ? config.nicejobConfigured
+          ? "Connected — clients are pushed into your NiceJob review campaign."
+          : "NiceJob mode is on, but no forwarding hook is set (NICEJOB_FORWARD_URL). See the README's NiceJob section."
+        : "";
     }
 
     async function loadConfig() {
@@ -281,8 +317,11 @@
       $("reviewLink").value = config.reviewLink;
       $("autoSend").checked = config.autoSend;
       $("cooldownDays").value = config.cooldownDays;
-      if (!config.reviewLink) $("settingsDetails").open = true;
+      if (!config.reviewLink && config.delivery !== "nicejob") {
+        $("settingsDetails").open = true;
+      }
       renderMode();
+      renderDeliveryFields();
       renderWebhookStatus();
       updatePreview();
     }
@@ -315,7 +354,9 @@
             : h.status === "sent"
               ? '<span class="tag sent">sent</span>'
               : '<span class="tag failed">failed</span>';
-          const source = sourceLabel[h.source] || "manual";
+          const source =
+            (sourceLabel[h.source] || "manual") +
+            (h.channel === "nicejob" ? " → NiceJob" : "");
           return `<tr><td>${escapeHtml(h.name)}</td><td>${escapeHtml(h.phone)}</td><td>${tag}</td><td>${escapeHtml(source)}</td><td>${when}</td></tr>`;
         })
         .join("");
@@ -487,6 +528,7 @@
             reviewLink: $("reviewLink").value,
             autoSend: $("autoSend").checked,
             cooldownDays: Number($("cooldownDays").value),
+            delivery: $("deliveryNicejob").checked ? "nicejob" : "sms",
           }),
         });
         await loadConfig();

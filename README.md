@@ -39,7 +39,7 @@ sent, so you can play with it safely.
 
 That link takes clients straight to the "leave a review" box for Morris Pools.
 
-### 2. Twilio (the service that sends the texts)
+### 2. Twilio (the service that sends the texts — skip if using NiceJob)
 
 1. Create an account at [twilio.com](https://www.twilio.com) and buy a phone
    number with SMS capability (about $1.15/month; texts are about $0.01 each).
@@ -120,6 +120,42 @@ arrives (and refuses anything that looks like a technician's info rather than
 a customer's). If a webhook comes through with a blank name or number, it
 still lands safely in the Waiting list — and the server log will show what
 arrived so the matching can be tightened up.
+
+## Using NiceJob instead of Twilio
+
+If you'd rather have [NiceJob](https://nicejob.com) send the review requests —
+it writes its own messages, sends both texts and emails, and automatically
+reminds people who don't respond — the pieces fit together like this:
+
+### JobTread → NiceJob: use the built-in integration (no code)
+
+JobTread connects to NiceJob natively. In JobTread go to **Settings →
+Integrations → NiceJob**, click **Connect to NiceJob**, sign in, and pick
+your "Get Reviews" campaign. Done — you don't need this app's JobTread
+webhook at all (leave `JOBTREAD_WEBHOOK_KEY` blank so it stays off).
+
+### Poolbrain → NiceJob: this app is the bridge
+
+Poolbrain and NiceJob don't talk to each other directly, and NiceJob's API is
+partner-only (it requires an approved developer application, which isn't
+worth it for one company). The clean path is through Zapier:
+
+1. In [Zapier](https://zapier.com), create a Zap:
+   - **Trigger:** "Webhooks by Zapier" → **Catch Hook**. Zapier shows you a
+     URL like `https://hooks.zapier.com/hooks/catch/…` — copy it.
+   - **Action:** "NiceJob" → **Create/Update Person & Enroll in Campaign**.
+     Connect your NiceJob account, map `full_name` and `phone` from the hook
+     data, and pick your Get Reviews campaign.
+2. Paste the hook URL into `.env` as `NICEJOB_FORWARD_URL` and restart.
+3. In the app's Settings, switch delivery to **Hand off to NiceJob**.
+
+Note: "Webhooks by Zapier" requires a paid Zapier plan (roughly $20/month).
+
+Now a job closed out in Poolbrain flows: Poolbrain → this app (signature
+check, completed-status filter, cooldown, approval queue) → Zapier → NiceJob
+campaign. In NiceJob mode you don't need Twilio, the review link, or the
+message template — NiceJob handles all of that. The approval queue and
+cooldown still apply, so nobody gets enrolled twice in a season.
 
 ## Day-to-day use
 

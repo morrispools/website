@@ -53,6 +53,7 @@ function getSettings() {
     cooldownDays: Number.isFinite(settings.cooldownDays)
       ? settings.cooldownDays
       : 90,
+    delivery: settings.delivery === "nicejob" ? "nicejob" : "sms",
   };
 }
 
@@ -120,19 +121,48 @@ async function sendSms(to, body) {
   return data.sid;
 }
 
+// ---------- NiceJob hand-off ----------
+// NiceJob's own API is partner-only (OAuth + developer approval), so the
+// hand-off goes through a forwarding hook instead — typically a Zapier
+// "Catch Hook" whose Zap runs NiceJob's "Create/Update Person & Enroll in
+// Campaign" action. NiceJob then sends its own review requests + reminders.
+
+function nicejobConfigured() {
+  return Boolean(process.env.NICEJOB_FORWARD_URL);
+}
+
+async function forwardToNicejob(name, phone, source) {
+  const res = await fetch(process.env.NICEJOB_FORWARD_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      full_name: name,
+      first_name: name.split(/\s+/)[0],
+      phone,
+      source,
+      requested_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) throw new Error(`Forwarding hook returned HTTP ${res.status}`);
+}
+
 // Shared send path for manual, queue, and auto sends. Appends to history.
 // Returns the history entry.
 async function performSend(name, phone, source) {
   const settings = getSettings();
+  const viaNicejob = settings.delivery === "nicejob";
+  const testMode = viaNicejob ? !nicejobConfigured() : !twilioConfigured();
   const firstName = name.split(/\s+/)[0];
-  const body = renderTemplate(settings.template, firstName, settings.reviewLink);
-  const testMode = !twilioConfigured();
+  const body = viaNicejob
+    ? "(handed off to NiceJob — NiceJob sends its own messages)"
+    : renderTemplate(settings.template, firstName, settings.reviewLink);
 
   const entry = {
     name,
     phone,
     body,
     source: source || "manual",
+    channel: viaNicejob ? "nicejob" : "sms",
     date: new Date().toISOString(),
     status: "sent",
     testMode,
@@ -140,7 +170,10 @@ async function performSend(name, phone, source) {
 
   const history = getHistory();
   try {
-    if (!testMode) entry.twilioSid = await sendSms(phone, body);
+    if (!testMode) {
+      if (viaNicejob) await forwardToNicejob(name, phone, entry.source);
+      else entry.twilioSid = await sendSms(phone, body);
+    }
   } catch (err) {
     entry.status = "failed";
     entry.error = err.message;
@@ -148,6 +181,12 @@ async function performSend(name, phone, source) {
   history.push(entry);
   writeJson(HISTORY_FILE, history);
   return entry;
+}
+
+// A review link is only a prerequisite when this app writes the message
+// itself; in NiceJob mode the campaign carries the link.
+function readyToSend(settings) {
+  return settings.delivery === "nicejob" || Boolean(settings.reviewLink);
 }
 
 // ---------- payload field extraction ----------
@@ -263,7 +302,7 @@ async function handleIncomingClient(source, eventName, payload) {
     return { action: "skipped_cooldown" };
   }
 
-  if (settings.autoSend && phone && name && settings.reviewLink) {
+  if (settings.autoSend && phone && name && readyToSend(settings)) {
     const sent = await performSend(name, phone, source);
     console.log(
       `[${source}] Auto-${sent.status === "sent" ? "sent" : "FAILED"} review text to ${name} (${phone}).`
@@ -498,8 +537,12 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/config", (req, res) => {
   const settings = getSettings();
+  const testMode =
+    settings.delivery === "nicejob" ? !nicejobConfigured() : !twilioConfigured();
   res.json({
-    testMode: !twilioConfigured(),
+    testMode,
+    delivery: settings.delivery,
+    nicejobConfigured: nicejobConfigured(),
     template: settings.template,
     reviewLink: settings.reviewLink,
     autoSend: settings.autoSend,
@@ -518,8 +561,10 @@ app.get("/api/config", (req, res) => {
 });
 
 app.post("/api/settings", (req, res) => {
-  const { template, reviewLink, autoSend, cooldownDays } = req.body || {};
+  const { template, reviewLink, autoSend, cooldownDays, delivery } =
+    req.body || {};
   const current = readJson(SETTINGS_FILE, {});
+  if (delivery === "sms" || delivery === "nicejob") current.delivery = delivery;
   if (typeof template === "string" && template.trim()) {
     current.template = template.trim();
   }
@@ -550,7 +595,7 @@ app.post("/api/queue/:id/send", async (req, res) => {
   const phone = normalizePhone((req.body && req.body.phone) || queue[index].phone);
   if (!name) return res.status(400).json({ error: "Client name is required." });
   if (!phone) return res.status(400).json({ error: "That phone number doesn't look valid." });
-  if (!getSettings().reviewLink) {
+  if (!readyToSend(getSettings())) {
     return res.status(400).json({
       error: "No Google review link set yet. Add it in Settings first.",
     });
@@ -594,7 +639,7 @@ app.post("/api/send", async (req, res) => {
   }
 
   const settings = getSettings();
-  if (!settings.reviewLink) {
+  if (!readyToSend(settings)) {
     return res.status(400).json({
       error:
         "No Google review link set yet. Add it in Settings (or GOOGLE_REVIEW_LINK in .env).",
@@ -618,9 +663,15 @@ app.post("/api/send", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  const mode = twilioConfigured()
-    ? "LIVE (Twilio connected)"
-    : "TEST MODE (no Twilio credentials — messages are logged, not sent)";
+  const settings = getSettings();
+  const mode =
+    settings.delivery === "nicejob"
+      ? nicejobConfigured()
+        ? "LIVE (handing off to NiceJob)"
+        : "TEST MODE (NiceJob mode, but NICEJOB_FORWARD_URL is not set — logging only)"
+      : twilioConfigured()
+        ? "LIVE (Twilio connected)"
+        : "TEST MODE (no Twilio credentials — messages are logged, not sent)";
   console.log(`Morris Pools review texts running at http://localhost:${PORT}`);
   console.log(`Mode: ${mode}`);
   console.log(
